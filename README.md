@@ -1,4 +1,4 @@
 Bias
 ====
 
-Character-level bidirectional LSTM for auto spacing (text segmentation).
+character-level **BI**directional lstm for **A**uto **S**pacing (text segmentation).

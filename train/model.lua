@@ -10,11 +10,14 @@ function Model:__init(config)
   self.batch_size = config.batch_size or 5
   self.reg = config.reg or 1e-4
   self.structure = config.structure or 'lstm'
-  self.dropout_p = (config.dropout == nil) and true or config.dropout_p
+  self.dropout = (config.dropout == nil) and true or config.dropout
   self.tensortype = torch.getdefaulttensortype()
 
-  self.emb_dim = config.emb_vecs:size(2)
-  self.emb = nn.LookupTable(config.emb_vectors(1), self.emb_dim)
+  -- emb_vecs = [word_size x embed_dim]
+  self.emb_dim = config.emb_vecs:size(2) or 1
+  -- nn.LookupTable(Size of dictionary, Size of embeding (output) dimension)
+  -- self.emb = nn.LookupTable(config.emb_vecs(1), self.emb_dim)
+  self.emb = nn.LookupTableGPU(config.emb_vecs(1), self.emb_dim)
   self.emb.weight:copy(config.emb_vecs)
 
   self.in_zeros = torch.zeros(self.emb_dim)
@@ -50,6 +53,8 @@ function Model:__init(config)
   end
 end
 
+-- predict the sentiment of a phrase using the representation
+-- given by the final LSTM hidden state
 function Model:new_decoder()
   local input_dim = self.num_layers * self.mem_dim
   local inputs, dec
@@ -93,4 +98,34 @@ function Model:train(dataset)
   if self.structure == 'bilstm' then
     self.lstm_b:training()
   end
+
+  local indicies = torch.randperm(dataset.size)
+  local zeros = torch.zeros(self.mem_dim)
+  for i=1, dataset.size, self.batch_size do
+    xlua.progress(i, dataset.size)
+    local batch_size = math.min(i+self.batch_size-1, dataset.size)-i+1
+
+    local feval = function(x)
+      self.grad_params:zero()
+      self.emb:zeroGradParameters()
+
+      local loss = 0
+      for j=1, batch_size do
+        local inx = indices[i + j - 1]
+        local x = data.x[idx]
+        local y = data.y[idx]
+
+        -- self.emb = nn.LookupTableGPU(config.emb_vecs(1), self.emb_dim)
+        local inputs = self.emb:forward(x)
+        local rep
+        if self.structure =='lstm' then
+          rep. self.lstm:forward(inputs)
+        elseif self.structure == 'bilstm' then
+          rep = {
+            self.lstm:forward(inputs)
+            self.lstm_b:forward(inputs, true),
+          }
+        end
+
+        local output = self.decoder
 end
