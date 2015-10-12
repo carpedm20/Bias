@@ -236,12 +236,12 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos, skip_seg
        local words
        if config.char_mode then
           words = {}
-          utf8.gsub(s, ".", function(c) table.insert(words,c) end)
+          utf8.gsub(s, ".", function(c) if c ~= ' ' then table.insert(words,c) end end)
        else
           words = pl.utils.split(s, ' ')
        end
        tot_nr_words = tot_nr_words + #words -- nr. words in the line
-       tot_nr_words = tot_nr_words + 1 -- newline
+       -- tot_nr_words = tot_nr_words + 1 -- newline
    end
    print('-- total lines: ' .. tot_lines)
    -- get the permutation vector
