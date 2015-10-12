@@ -12,6 +12,7 @@ function Model:__init(config)
   self.structure = config.structure or 'lstm'
   self.dropout = (config.dropout == nil) and true or config.dropout
   self.tensortype = torch.getdefaulttensortype()
+  self.decoder_option = (config.decoder_option == 'all') and 'all' or 'last'
 
   -- emb_vecs = [word_size x embed_dim]
   self.emb_dim = config.emb_vecs:size(2) or 1
@@ -25,7 +26,12 @@ function Model:__init(config)
 
   self.optim_state = {learningRate = self.learning_rate}
   self.criterion = nn.ClassNLLCriterion()
-  self.decoder = self:new_decoder()
+
+  if self.decoder_option == 'all' then
+    self.decoder = self:new_decoder1()
+  else
+    self.decoder = self:new_decoder2()
+  end
 
   local lstm_config = {
     input_dim = self.emb_dim,
@@ -43,6 +49,8 @@ function Model:__init(config)
     error('Wrong structure: '..self.structure)
   end
 
+  -- This Parallel model is not used during forward and backward pass
+  -- It is just a model to extract parameters
   local encoder = nn.Parallel()
     :add(self.lstm)
     :add(self.decoder)
@@ -55,7 +63,7 @@ end
 
 -- predict the sentiment of a phrase using the representation
 -- given by the final LSTM hidden state
-function Model:new_decoder()
+function Model:new_decoder1()
   local input_dim = self.num_layers * self.mem_dim
   local inputs, dec
   if self.structure == 'lstm' then
@@ -73,6 +81,41 @@ function Model:new_decoder()
       dec = nn.JoinTable(1){frep, brep}
     else
       dec = nn.JoinTable(1){nn.JoinTalbe(1)(frep), nn.JoinTable(1)(brep)}
+    end
+    inputs = {frep, brep}
+  end
+
+  local logprobs
+  if self.dropout then
+    logprobs = nn.LogSoftMax()(
+      nn.Linear(input_dim, self.num_classes)(
+        nn.Dropout()(dec)))
+  else
+    logprobs = nn.LogSoftMax()(
+      nn.Linear(input_dim, self.num_classes))
+  end
+
+  return nn.gModule(inputs, {logprobs})
+end
+
+function Model:new_decoder2()
+  local input_dim = 1 * self.mem_dim
+  local inputs, dec
+  if self.structure == 'lstm' then
+    local rep = nn.Identity()()
+    if self.num_layers == 1 then
+      dec = {rep}
+    else
+      dec = rep[1]
+    end
+    inputs = {rep}
+  elseif self.structure == 'bilstm' then
+    local frep, brep = nn.Identity()(), nn.Identity()()
+    input = input_dim * 2
+    if self.num_layers == 1 then
+      dec = nn.JoinTable(1){frep, brep}
+    else
+      dec = nn.JoinTable(1){frep[1], brep[1]}
     end
     inputs = {frep, brep}
   end
@@ -111,15 +154,20 @@ function Model:train(dataset)
 
       local loss = 0
       for j=1, batch_size do
-        local inx = indices[i + j - 1]
-        local x = data.x[idx]
-        local y = data.y[idx]
+        local idx = indices[i + j - 1]
+        local x = data.x[{{idx, idx+self.window_size}}]
+        local y = data.y[{{idx, idx+self.window_size}}]
 
         -- self.emb = nn.LookupTableGPU(config.emb_vecs(1), self.emb_dim)
         local inputs = self.emb:forward(x)
         local rep
+        -- self.output = {}
+        -- for i = 1, self.num_layers do
+        --   self.output[i] = htable[i]
+        -- end
+        -- return self.output
         if self.structure =='lstm' then
-          rep. self.lstm:forward(inputs)
+          rep = self.lstm:forward(inputs)
         elseif self.structure == 'bilstm' then
           rep = {
             self.lstm:forward(inputs)
@@ -127,5 +175,35 @@ function Model:train(dataset)
           }
         end
 
-        local output = self.decoder
+        local output = self.decoder:forward(rep)
+        local example_loss = self.criterion:forward(output, y)
+        loss = loss + example_loss
+        local obj_grad = self.criterion:backward(output, y)
+        local rep_grad = self.decoder:backward(rep, obj_grad)
+        local input_grads
+        if self.structure == 'lstm' then
+          input_grads = self.LSTM_backward(x, inputs, rep_grad)
+        elseif self.structure == 'bilstm' then
+          input_grads = self.LSTM_backward(x, inputs, rep_grad)
+        end
+        self.emb:backward(span, input_grads)
+      end
+    
+      loss = loss / batch_size
+      self.grad_params:div(batch_size)
+      self.emb.gradWeight:div(batch_size)
+
+      loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      self.grad_params:add(self.reg, self.params) -- ???
+      return loss, self.grad_params
+    end
+
+    optim.adagrad(feval, self.params, self.optim_state)
+    self.emb:updateParameters(self.emb_learning_rate)
+  end
+  xlua.progress(dataset.size, dataset.size)
+end
+
+function Model:LSTM_backward(x, inputs, rep_grad)
+
 end
