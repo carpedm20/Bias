@@ -7,6 +7,7 @@ require('sys')
 require('lfs')
 
 include('LSTM.lua')
+include('model.lua')
 
 printf = utils.printf
 

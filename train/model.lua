@@ -4,7 +4,7 @@ local Model = torch.class('Model')
 
 function Model:__init(config)
   self.mem_dim = config.mem_dim or 120
-  self.learning_rate = config.learning_rate = 0.05
+  self.learning_rate = config.learning_rate or 0.05
   self.emb_learning_rate = config.emb_learning_rate or 0.1
   self.num_layers = config.num_layers or 1
   self.batch_size = config.batch_size or 5
@@ -14,12 +14,9 @@ function Model:__init(config)
   self.tensortype = torch.getdefaulttensortype()
   self.decoder_option = (config.decoder_option == 'all') and 'all' or 'last'
 
-  -- emb_vecs = [word_size x embed_dim]
-  self.emb_dim = config.emb_vecs:size(2) or 1
+  self.emb_dim = 100
   -- nn.LookupTable(Size of dictionary, Size of embeding (output) dimension)
-  -- self.emb = nn.LookupTable(config.emb_vecs(1), self.emb_dim)
-  self.emb = nn.LookupTableGPU(config.emb_vecs(1), self.emb_dim)
-  self.emb.weight:copy(config.emb_vecs)
+  self.emb = nn.LookupTableGPU(config.dict:size(1), self.emb_dim)
 
   self.in_zeros = torch.zeros(self.emb_dim)
   self.num_classes = 2
@@ -160,7 +157,6 @@ function Model:train(data)
         local x = data.x[{{idx, idx+self.window_size}}]
         local y = data.y[{{idx, idx+self.window_size}}]
 
-        -- self.emb = nn.LookupTableGPU(config.emb_vecs(1), self.emb_dim)
         local inputs = self.emb:forward(x)
         local rep
         -- self.output = {}
@@ -172,7 +168,7 @@ function Model:train(data)
           rep = self.lstm:forward(inputs)
         elseif self.structure == 'bilstm' then
           rep = {
-            self.lstm:forward(inputs)
+            self.lstm:forward(inputs),
             self.lstm_b:forward(inputs, true),
           }
         end

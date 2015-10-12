@@ -6,10 +6,12 @@ function accuracy(pred, gold)
   return torch.eq(pred, gold):sum() / pred:size(1)
 end
 
-model_name = 'Bidirectional LSTM'
-model_class = LSTM
+function header(s)
+  print(string.rep('-', 40))
+print(s)
+  print(string.rep('-', 40))
+end
 
-local config
 local TEST = true
 if TEST then
   config = {nclusters = 1,
@@ -36,7 +38,7 @@ dictfname = config.name .. '.dictionary' ..
             '_charmode=' .. tostring(config.char_mode) ..
             '.th7'
 
-force = true
+force = false
 dic_find = false
 for f in paths.files(config.data_path) do
   if string.find(f, dictfname) then
@@ -46,15 +48,33 @@ for f in paths.files(config.data_path) do
 end
 
 if (dic_find and not force) == false then
-  print(" [#] Build new dictionary")
+  print("===>[#] Build new dictionary")
   dict = tokenizer.build_dictionary(config, config.in_f)
 else
-  print(" [#] Load existing dictionary")
+  print("===>[#] Load existing dictionary")
 end
 
-print(" [#] Dictionary size : " .. dict.index_to_freq:size(1))
+print("===>[#] Dictionary size : " .. dict.index_to_freq:size(1))
 
-x, y = tokenizer.tokenize(dict, config.in_f, config.out_f, config, false, true)
+token_find = false
+tokenfname = config.name..".tokenized.txt"
+for f in paths.files(config.data_path) do
+  if string.find(f, tokenfname) then
+    x = torch.load(paths.concat(config.data_path, f))
+    yfname, _ = paths.concat(config.data_path, f):gsub(".tokenized.",".segmenter.")
+    y = torch.load(yfname)
+    token_find = true
+  end
+end
+if (token_find and not force) == false then
+  print("===>[#] Build new tokenized texts")
+  x, y = tokenizer.tokenize(dict, config.in_f, config.out_f, config, false, true)
+else
+  print("===>[#] Load existing tokenized texts")
+end
+
+print("===>[#] Training data size : " .. x:size(1))
+
 
 local test_length = 20
 
@@ -77,5 +97,61 @@ function test_x_y(x, y, dict, test_length, vertical, start)
   end
 end
 
-test_x_y(x,y,dict,30)
+-- test_x_y(x,y,dict,30)
 -- test_x_y(x,y,dict,40,true,x:size(1)-40)
+
+model_name = 'Bidirectional LSTM'
+model_class = Model
+model_structure = 'bilstm'
+nlayers = 1
+mem_dim = 120
+
+header(model_name .. ' for Sentiment Classification')
+
+model = model_class{
+  dict = dict,
+  structure = model_structure,
+  num_layers = nlayers,
+  mem_dim = mem_dim,
+}
+
+-- number of epochs to train
+num_epochs = 1
+
+header('model configuration')
+printf('max epochs = %d\n', num_epochs)
+model:print_config()
+
+train_start = sys.clock()
+best_dev_score = -1.0
+best_dev_model = model
+header('Training model')
+for i = 1, num_epochs do
+  local start = sys.clock()
+  printf('-- epoch %d\n', i)
+  model:train({x=x, y=y})
+  printf('-- finished epoch in %.2fs\n', sys.clock() - start)
+
+  -- uncomment to compute train scores
+  local train_predictions = model:predict_dataset(train_dataset)
+  local train_score = accuracy(train_predictions, train_dataset.labels)
+  printf('-- train score: %.4f\n', train_score)
+
+  local dev_predictions = model:predict_dataset(dev_dataset)
+  local dev_score = accuracy(dev_predictions, dev_dataset.labels)
+  printf('-- dev score: %.4f\n', dev_score)
+
+  if dev_score > best_dev_score then
+    best_dev_score = dev_score
+    best_dev_model = model_class{
+      emb_vecs = vecs,
+      structure = model_structure,
+      fine_grained = fine_grained,
+      num_layers = args.layers,
+      mem_dim = args.dim,
+    }
+    best_dev_model.params:copy(model.params)
+    best_dev_model.emb.weight:copy(model.emb.weight)
+  end
+end
+printf('finished training in %.2fs\n', sys.clock() - train_start)

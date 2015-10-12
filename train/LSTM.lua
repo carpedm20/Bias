@@ -194,3 +194,16 @@ function LSTM:forget()
     end
   end
 end
+
+function LSTM:clipGradParams(gclip)
+  for k,v in pairs(self.nets) do
+    local lw, ldw = v:parameters()
+    if ldw then
+      for i = 1, #ldw do
+        if ldw[i] then
+          self.clip_function(ldw[i], gclip)
+        end
+      end
+    end
+  end
+end
