@@ -1,4 +1,7 @@
 *.th7
+*.sql
+*.7z
+*.txt
 
 # Created by https://www.gitignore.io/api/vim,lua
 

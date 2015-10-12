@@ -205,5 +205,31 @@ function Model:train(dataset)
 end
 
 function Model:LSTM_backward(x, inputs, rep_grad)
+  local grad
+  if self.num_layers == 1 then
+    gard = torch.zeros(x:nElement(), self.mem_dim)
+    grad[x:nElement()] = rep_grad
+  else
+    grad = torch.zeros(x:nElement(), self.num_layers, self.mem_dim)
+    for l=1, self.num_layers do
+      grad[{x, l, {}}] = rep_gard[l]
+    end
+  end
+  local input_grads = self.lstm:backward(inputs,grad)
+  return input_grads
+end
 
+function Model:LSTM_backward(x, inputs, rep_grad)
+  local grad
+  if self.num_layers == 1 then
+    gard = torch.zeros(x:nElement(), self.mem_dim)
+    grad[x:nElement()] = rep_grad
+  else
+    grad = torch.zeros(x:nElement(), self.num_layers, self.mem_dim)
+    for l=1, self.num_layers do
+      grad[{x, l, {}}] = rep_gard[l]
+    end
+  end
+  local input_grads = self.lstm:backward(inputs,grad)
+  return input_grads
 end
