@@ -20,8 +20,12 @@
 
 local utf8 = require 'lua-utf8'
 require('math')
+require('io')
 local ffivector = require('fb.ffivector')
 local pl = require('pl.import_into')()
+local List=require 'pl.List'
+
+segmenter = List{' ','.','?','!'}
 
 local Tokenizer = {}
 
@@ -177,12 +181,12 @@ function Tokenizer.build_dictionary(config, trainfname)
     dict.separatorIndex = dict.symbol_to_index['</s>']
 
     -- Save dictionary.
-    local dictfname = paths.concat(config.dest_path,
+    local dictfname = paths.concat(config.data_path,
                                    config.name .. '.dictionary' ..
-                                       '_nclust=' .. nr_clusters ..
-                                       '_thresh=' .. config.threshold ..
-                                       '_charmode=' .. tostring(config.char_mode) ..
-                                       '.th7')
+                                   '_nclust=' .. nr_clusters ..
+                                   '_thresh=' .. config.threshold ..
+                                   '_charmode=' .. tostring(config.char_mode) ..
+                                   '.th7')
 
     torch.save(dictfname, dict)
     print('There are effectively ' .. net_nwords .. ' words in the corpus.')
@@ -201,7 +205,7 @@ end
 --   filenameOut: full path of the output file
 --        config: configuration parameters of the data
 --         shuff: whether to shuffle the sentences or not (true|false)
-function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
+function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos, skip_segmenter)
    print("saving to " .. filenameOut)
    local unk = "<UNK>"
    local threshold = config.threshold
@@ -210,7 +214,13 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
    local all_lines = ffivector.new_string()
    local tot_nr_words = 0
    local tot_lines = 0
+   local skip_segmenter = skip_segmenter or true
+
+   local handle = io.popen('wc -l ' .. filenameIn)
+   local real_lines = handle:read("*a"):split(' ')[1]
+   handle.close()
    for s in io.lines(filenameIn) do
+       xlua.progress(tot_lines, real_lines+0)
        -- store the line
        tot_lines = tot_lines + 1
        all_lines[tot_lines] = s
@@ -223,7 +233,13 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
        -- and not white spaes
        s = s:gsub("%s+", " ")
        -- count the words
-       local words = pl.utils.split(s, ' ')
+       local words
+       if config.char_mode then
+          words = {}
+          utf8.gsub(s, ".", function(c) table.insert(words,c) end)
+       else
+          words = pl.utils.split(s, ' ')
+       end
        tot_nr_words = tot_nr_words + #words -- nr. words in the line
        tot_nr_words = tot_nr_words + 1 -- newline
    end
@@ -240,9 +256,12 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
    end
    -- now store the lines in the tensor
    local data = torch.Tensor(tot_nr_words) -- id, cluster_id, within_cluster_id
+   local y = torch.Tensor(tot_nr_words) -- segmenter
    local id = 0
    local cnt = 1
+   local segmenter_cnt = 0
    for ln = 1, tot_lines do
+       xlua.progress(ln, tot_lines) 
        local s = all_lines[perm_vec[ln]]
        -- remove all the tabs in the string
        s = s:gsub("\t", "")
@@ -253,7 +272,13 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
        -- and not white spaes
        s = s:gsub("%s+", " ")
        collectgarbage()
-       local words = pl.utils.split(s, ' ')
+       local words
+       if config.char_mode then
+          words = {}
+          utf8.gsub(s, ".", function(c) table.insert(words,c) end)
+       else
+          words = pl.utils.split(s, ' ')
+       end
        for i, word in pairs(words) do
            if word ~= "" then
                if dict.symbol_to_index[word] == nil or
@@ -263,19 +288,30 @@ function Tokenizer.tokenize(dict, filenameIn, filenameOut, config, eos)
                else
                    id = dict.symbol_to_index[word]
                end
-               data[cnt] = id
-               cnt = cnt + 1
+               if skip_segmenter and word == ' ' then
+                   segmenter_cnt = segmenter_cnt + 1
+                   y[cnt-1] = 1
+               else
+                   data[cnt] = id
+                   y[cnt] = 0
+                   cnt = cnt + 1
+               end
            end
        end
        -- Add newline if specified
        if eos == true then
-           id = dict.symbol_to_index["</s>"]
-           data[cnt] = id
-           cnt = cnt + 1
+           y[cnt-1] = 2
+           -- id = dict.symbol_to_index["</s>"]
+           -- data[cnt] = id
+           ----  cnt = cnt + 1
        end
        collectgarbage()
    end
+   print(" [#] # of segmenter : " .. segmenter_cnt)
    torch.save(filenameOut, data)
+   torch.save(filenameOut:gsub(".tokenized.",".segmenter."), y)
+
+   return data, y
 end
 
 return Tokenizer
