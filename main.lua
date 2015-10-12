@@ -1,3 +1,4 @@
+debugger = require('fb.debugger')
 require('train/init')
 
 tokenizer = require 'libs/tokenizer'
@@ -7,11 +8,12 @@ function accuracy(pred, gold)
 end
 
 function header(s)
-  print(string.rep('-', 40))
-print(s)
-  print(string.rep('-', 40))
+  print(string.rep('=', 50))
+print("     "..s)
+  print(string.rep('=', 50))
 end
 
+nngraph.setDebug(true)
 local TEST = true
 if TEST then
   config = {nclusters = 1,
@@ -105,6 +107,7 @@ model_class = Model
 model_structure = 'bilstm'
 nlayers = 1
 mem_dim = 120
+window_size = 5
 
 header(model_name .. ' for Sentiment Classification')
 
@@ -113,6 +116,7 @@ model = model_class{
   structure = model_structure,
   num_layers = nlayers,
   mem_dim = mem_dim,
+  window_size = window_size,
 }
 
 -- number of epochs to train

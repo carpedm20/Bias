@@ -1,8 +1,10 @@
 require('nn')
+require('fbcunn')
 
 local Model = torch.class('Model')
 
 function Model:__init(config)
+  self.window_size = config.window_size or 55555
   self.mem_dim = config.mem_dim or 120
   self.learning_rate = config.learning_rate or 0.05
   self.emb_learning_rate = config.emb_learning_rate or 0.1
@@ -16,7 +18,7 @@ function Model:__init(config)
 
   self.emb_dim = 100
   -- nn.LookupTable(Size of dictionary, Size of embeding (output) dimension)
-  self.emb = nn.LookupTableGPU(config.dict:size(1), self.emb_dim)
+  self.emb = nn.LookupTableGPU(config.dict.index_to_freq:size(1), self.emb_dim)
 
   self.in_zeros = torch.zeros(self.emb_dim)
   self.num_classes = 2
@@ -51,7 +53,7 @@ function Model:__init(config)
   local encoder = nn.Parallel()
     :add(self.lstm)
     :add(self.decoder)
-  self.params, self.grad_params = modules:gradParameters()
+  self.params, self.grad_params = encoder:getParameters()
 
   if self.structure == 'bilstm' then
     share_params(self.lstm_b, self.lstm)
@@ -141,7 +143,7 @@ function Model:train(data)
     self.lstm_b:training()
   end
 
-  local indicies = torch.randperm(data.y:size() - self.window_size + 1)
+  local indices = torch.randperm(data.y:size(1) - self.window_size + 1)
   local zeros = torch.zeros(self.mem_dim)
   for i=1, data.x:size(1), self.batch_size do
     xlua.progress(i, data.x:size(1))
@@ -292,15 +294,16 @@ end
 
 function Model:print_config()
   local num_params = self.params:size(1)
-  local num_decoder_params = self:new_decoder():getParameters():size(1)
+  local num_decoder_params = self:new_decoder1():getParameters():size(1)
   printf('%-25s = %d\n',   'num params', num_params)
   printf('%-25s = %d\n',   'num compositional params', num_params - num_decoder_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
+  printf('%-25s = %d\n',   'window size', self.window_size)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %s\n',   'LSTM structure', self.structure)
   printf('%-25s = %d\n',   'LSTM layers', self.num_layers)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
-  printf('%-25s = %d\n',   'minibatch size', self.batch_size * (self.train_subtrees + 1))
+  printf('%-25s = %d\n',   'minibatch size', self.batch_size)
   printf('%-25s = %.2e\n', 'learning rate', self.learning_rate)
   printf('%-25s = %.2e\n', 'word vector learning rate', self.emb_learning_rate)
   printf('%-25s = %s\n',   'dropout', tostring(self.dropout))
@@ -317,6 +320,7 @@ function Model:save(path)
     mem_dim           = self.mem_dim,
     reg               = self.reg,
     structure         = self.structure,
+    window_size       = self.window_size,
   }
 
   torch.save(path, {

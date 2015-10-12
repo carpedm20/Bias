@@ -80,7 +80,7 @@ function LSTM:new_cell()
   local cell = nn.gModule({input, ctable_prev, htable_prev}, {ctable, htable})
 
   if self.master_cell then
-    shar_params(cell, self.master_cell)
+    share_params(cell, self.master_cell)
   end
   return cell
 end
@@ -104,6 +104,7 @@ function LSTM:forward(inputs, reverse)
       prev_output = self.initial_values
     end
 
+    debugger.enter()
     local outputs = cell:forward({input, prev_output[1], prev_output[2]})
     local ctable, htable = unpack(outputs) -- ???
     if self.num_layers == 1 then
