@@ -1,4 +1,4 @@
-debugger = require('fb.debugger')
+-- debugger = require('fb.debugger')
 require('train/init')
 
 tokenizer = require 'libs/tokenizer'

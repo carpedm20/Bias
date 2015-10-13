@@ -1,5 +1,6 @@
 require('nn')
-require('fbcunn')
+-- require('fbcunn')
+nngraph.setDebug(true)
 
 local Model = torch.class('Model')
 
@@ -18,7 +19,8 @@ function Model:__init(config)
 
   self.emb_dim = 100
   -- nn.LookupTable(Size of dictionary, Size of embeding (output) dimension)
-  self.emb = nn.LookupTableGPU(config.dict.index_to_freq:size(1), self.emb_dim)
+  -- self.emb = nn.LookupTableGPU(config.dict.index_to_freq:size(1), self.emb_dim)
+  self.emb = nn.LookupTable(config.dict.index_to_freq:size(1), self.emb_dim)
 
   self.in_zeros = torch.zeros(self.emb_dim)
   self.num_classes = 2

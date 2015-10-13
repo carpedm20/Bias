@@ -2,6 +2,9 @@
 *.sql
 *.7z
 *.txt
+*.dot
+*.svg
+*test*
 
 # Created by https://www.gitignore.io/api/vim,lua
 

@@ -104,7 +104,7 @@ function LSTM:forward(inputs, reverse)
       prev_output = self.initial_values
     end
 
-    debugger.enter()
+    -- debugger.enter()
     local outputs = cell:forward({input, prev_output[1], prev_output[2]})
     local ctable, htable = unpack(outputs) -- ???
     if self.num_layers == 1 then
